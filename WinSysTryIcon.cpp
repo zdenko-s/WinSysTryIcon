@@ -1,29 +1,44 @@
 #include <windows.h>
 #include <shellapi.h>
+#include <shlwapi.h>
+#include <shlobj.h>
+#include <vector>
+#include <string>
+#include <filesystem>
+
+#pragma comment(lib, "Shell32.lib")
+#pragma comment(lib, "Shlwapi.lib")
 
 #define WM_TRAYICON (WM_USER + 1)
-#define ID_TRAY_EXIT 1001
+#define ID_TRAY_BASE 2000
 
 HINSTANCE hInst;
-NOTIFYICONDATA nid;
 HWND hwnd;
+NOTIFYICONDATA nid;
+std::wstring exeFolder = L"C:\\Util\\putty.74";  // Change this to your folder
 
-// Forward declarations
+struct MenuItemInfo {
+    std::wstring name;
+    std::wstring path;
+    HICON icon;
+};
+std::vector<MenuItemInfo> menuItems;
+
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void ShowContextMenu(HWND hwnd);
+void LoadMenuItems();
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     hInst = hInstance;
 
-    WNDCLASS wc = {};
+    WNDCLASS wc = { 0 };
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = L"TrayAppClass";
+    wc.lpszClassName = L"TrayAppWithIcons";
     RegisterClass(&wc);
 
     hwnd = CreateWindow(wc.lpszClassName, L"TrayApp", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 300, 200,
-        NULL, NULL, hInstance, NULL);
+        0, 0, 300, 200, NULL, NULL, hInstance, NULL);
 
     // Add tray icon
     nid = {};
@@ -33,30 +48,91 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
     nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wcscpy_s(nid.szTip, L"My Tray App");
+    wcscpy_s(nid.szTip, L"Executable Menu");
     Shell_NotifyIcon(NIM_ADD, &nid);
 
-    // Message loop
+    LoadMenuItems();
+
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    // Remove tray icon on exit
+    // Clean up icons
+    for (auto& item : menuItems)
+        if (item.icon) DestroyIcon(item.icon);
+
     Shell_NotifyIcon(NIM_DELETE, &nid);
     return 0;
 }
 
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_TRAYICON) {
-        if (LOWORD(lParam) == WM_RBUTTONUP) {
-            ShowContextMenu(hwnd);
+void LoadMenuItems() {
+    using namespace std::filesystem;
+    menuItems.clear();
+    for (const auto& entry : directory_iterator(exeFolder)) {
+        if (entry.is_regular_file() && entry.path().extension() == L".EXE") {
+            MenuItemInfo info;
+            info.path = entry.path().wstring();
+            info.name = entry.path().filename().wstring();
+
+            SHFILEINFO sfi = {};
+            SHGetFileInfo(info.path.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_SMALLICON);
+            info.icon = sfi.hIcon;
+
+            menuItems.push_back(info);
         }
     }
+}
+
+void ShowContextMenu(HWND hwnd) {
+    POINT pt;
+    GetCursorPos(&pt);
+    HMENU hMenu = CreatePopupMenu();
+
+    int id = ID_TRAY_BASE;
+    for (const auto& item : menuItems) {
+        MENUITEMINFO mii = { sizeof(MENUITEMINFO) };
+        mii.fMask = MIIM_STRING | MIIM_ID | MIIM_FTYPE | MIIM_BITMAP;
+        mii.fType = MFT_STRING;
+        mii.wID = id++;
+        mii.dwTypeData = const_cast<LPWSTR>(item.name.c_str());
+
+        if (item.icon) {
+            HBITMAP hBmp = nullptr;
+            ICONINFO ii;
+            GetIconInfo(item.icon, &ii);
+            hBmp = ii.hbmColor;
+
+            mii.fMask |= MIIM_BITMAP;
+            mii.hbmpItem = HBMMENU_CALLBACK;  // let system draw icon automatically
+        }
+
+        InsertMenuItem(hMenu, -1, TRUE, &mii);
+    }
+
+    AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+    AppendMenu(hMenu, MF_STRING, 9999, L"Exit");
+
+    SetForegroundWindow(hwnd);
+    TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+    DestroyMenu(hMenu);
+}
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_TRAYICON && LOWORD(lParam) == WM_RBUTTONUP) {
+        ShowContextMenu(hwnd);
+    }
     else if (msg == WM_COMMAND) {
-        if (LOWORD(wParam) == ID_TRAY_EXIT) {
+        int cmd = LOWORD(wParam);
+        if (cmd == 9999) {
             PostQuitMessage(0);
+        }
+        else if (cmd >= ID_TRAY_BASE && cmd < ID_TRAY_BASE + 1000) {
+            int index = cmd - ID_TRAY_BASE;
+            if (index >= 0 && index < menuItems.size()) {
+                ShellExecute(NULL, L"open", menuItems[index].path.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            }
         }
     }
     else if (msg == WM_DESTROY) {
@@ -65,199 +141,3 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
-
-void ShowContextMenu(HWND hwnd) {
-    POINT pt;
-    GetCursorPos(&pt);
-
-    HMENU hMenu = CreatePopupMenu();
-    AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
-
-    SetForegroundWindow(hwnd); // Required for the menu to disappear properly
-    TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
-    DestroyMenu(hMenu);
-}
-
-/*
-
-// WinSysTryIcon.cpp : Defines the entry point for the application.
-//
-
-#include "framework.h"
-#include "WinSysTryIcon.h"
-
-#define MAX_LOADSTRING 100
-
-// Global Variables:
-HINSTANCE hInst;                                // current instance
-WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
-WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
-
-// Forward declarations of functions included in this code module:
-ATOM                MyRegisterClass(HINSTANCE hInstance);
-BOOL                InitInstance(HINSTANCE, int);
-LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
-
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
-{
-    UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
-
-    // TODO: Place code here.
-
-    // Initialize global strings
-    LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_WINSYSTRYICON, szWindowClass, MAX_LOADSTRING);
-    MyRegisterClass(hInstance);
-
-    // Perform application initialization:
-    if (!InitInstance (hInstance, nCmdShow))
-    {
-        return FALSE;
-    }
-
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_WINSYSTRYICON));
-
-    MSG msg;
-
-    // Main message loop:
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
-
-    return (int) msg.wParam;
-}
-
-
-
-//
-//  FUNCTION: MyRegisterClass()
-//
-//  PURPOSE: Registers the window class.
-//
-ATOM MyRegisterClass(HINSTANCE hInstance)
-{
-    WNDCLASSEXW wcex;
-
-    wcex.cbSize = sizeof(WNDCLASSEX);
-
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_WINSYSTRYICON));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_WINSYSTRYICON);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
-    return RegisterClassExW(&wcex);
-}
-
-//
-//   FUNCTION: InitInstance(HINSTANCE, int)
-//
-//   PURPOSE: Saves instance handle and creates main window
-//
-//   COMMENTS:
-//
-//        In this function, we save the instance handle in a global variable and
-//        create and display the main program window.
-//
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
-{
-   hInst = hInstance; // Store instance handle in our global variable
-
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
-
-   if (!hWnd)
-   {
-      return FALSE;
-   }
-
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
-
-   return TRUE;
-}
-
-//
-//  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  PURPOSE: Processes messages for the main window.
-//
-//  WM_COMMAND  - process the application menu
-//  WM_PAINT    - Paint the main window
-//  WM_DESTROY  - post a quit message and return
-//
-//
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    switch (message)
-    {
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            // Parse the menu selections:
-            switch (wmId)
-            {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
-            }
-        }
-        break;
-    case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: Add any drawing code that uses hdc here...
-            EndPaint(hWnd, &ps);
-        }
-        break;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
-    return 0;
-}
-
-// Message handler for about box.
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
-
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-        {
-            EndDialog(hDlg, LOWORD(wParam));
-            return (INT_PTR)TRUE;
-        }
-        break;
-    }
-    return (INT_PTR)FALSE;
-}
-*/
