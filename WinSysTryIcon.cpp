@@ -19,7 +19,7 @@ HINSTANCE hInst;
 HWND hwnd;
 NOTIFYICONDATA nid;
 HMENU hTrayMenu;
-std::wstring shortcutsDir = L"C:\\Your\\Shortcuts\\Path";  // <--- CHANGE ME
+std::wstring shortcutsDir = L"C:\\Util\\Util";  // <--- CHANGE ME
 
 int commandIdCounter = 1000;
 std::map<int, std::wstring> commandMap;
