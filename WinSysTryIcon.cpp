@@ -1,170 +1,155 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <shlwapi.h>
+#include <shobjidl.h>
 #include <commctrl.h>
 #include <string>
 #include <vector>
 #include <map>
+#include <filesystem>
 
-#pragma comment(lib, "shell32.lib")
-#pragma comment(lib, "shlwapi.lib")
-#pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "Shell32.lib")
+#pragma comment(lib, "Comctl32.lib")
 
 #define WM_TRAYICON (WM_USER + 1)
-#define ID_TRAY_BASE 2000
+#define ID_TRAY_EXIT 9000
+#define TRAY_ICON_UID 1
 
 HINSTANCE hInst;
-NOTIFYICONDATA nid;
 HWND hwnd;
-std::map<int, std::wstring> menuCommandMap;
-int currentMenuID = ID_TRAY_BASE;
+NOTIFYICONDATA nid;
+HMENU hTrayMenu;
+std::wstring shortcutsDir = L"C:\\Your\\Shortcuts\\Path";  // <--- CHANGE ME
 
-std::wstring rootShortcutDir = L"C:\\Util\\Util"; // <-- SET THIS TO YOUR SHORTCUT DIRECTORY
+int commandIdCounter = 1000;
+std::map<int, std::wstring> commandMap;
 
 // Forward declarations
-LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void ShowContextMenu(HWND hwnd);
-void PopulateMenuFromFolder(HMENU hMenu, const std::wstring& folder, bool recurse);
-void ExecuteShortcut(const std::wstring& path);
-HICON GetSmallIcon(const std::wstring& filePath);
-
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
-    hInst = hInstance;
-    CoInitialize(NULL);
-
-    WNDCLASS wc = {};
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = L"ShortcutTrayAppClass";
-    RegisterClass(&wc);
-
-    hwnd = CreateWindow(wc.lpszClassName, L"TrayApp", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 300, 200,
-        NULL, NULL, hInstance, NULL);
-
-    // Add tray icon
-    nid = {};
-    nid.cbSize = sizeof(nid);
-    nid.hWnd = hwnd;
-    nid.uID = 1;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wcscpy_s(nid.szTip, L"My Shortcut Tray");
-    Shell_NotifyIcon(NIM_ADD, &nid);
-
-    MSG msg;
-    while (GetMessage(&msg, nullptr, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-
-    Shell_NotifyIcon(NIM_DELETE, &nid);
-    CoUninitialize();
-    return 0;
-}
+void AddShortcutsToMenu(HMENU menu, const std::filesystem::path& dir);
+void RunShortcut(const std::wstring& path);
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_TRAYICON) {
+    switch (msg) {
+    case WM_TRAYICON:
         if (LOWORD(lParam) == WM_RBUTTONUP) {
             ShowContextMenu(hwnd);
         }
+        break;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == ID_TRAY_EXIT) {
+            PostQuitMessage(0);
+        }
+        else if (commandMap.count(LOWORD(wParam))) {
+            RunShortcut(commandMap[LOWORD(wParam)]);
+        }
+        break;
+    case WM_DESTROY:
+        Shell_NotifyIcon(NIM_DELETE, &nid);
+        PostQuitMessage(0);
+        break;
+    default:
+        return DefWindowProc(hwnd, msg, wParam, lParam);
     }
-    else if (msg == WM_COMMAND) {
-        int id = LOWORD(wParam);
-        if (menuCommandMap.count(id)) {
-            ExecuteShortcut(menuCommandMap[id]);
+    return 0;
+}
+
+void AddShortcutsToMenu(HMENU menu, const std::filesystem::path& dir) {
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        if (entry.is_directory()) {
+            HMENU subMenu = CreatePopupMenu();
+            AddShortcutsToMenu(subMenu, entry.path());
+            AppendMenu(menu, MF_POPUP, (UINT_PTR)subMenu, entry.path().filename().c_str());
+        }
+        else if (entry.path().extension() == L".lnk") {
+            int id = commandIdCounter++;
+            commandMap[id] = entry.path().wstring();
+
+            SHFILEINFO sfi = {};
+            SHGetFileInfo(entry.path().c_str(), 0, &sfi, sizeof(sfi),
+                SHGFI_ICON | SHGFI_SMALLICON | SHGFI_DISPLAYNAME);
+
+            AppendMenu(menu, MF_STRING, id, sfi.szDisplayName);
+
+            if (sfi.hIcon) {
+                MENUITEMINFO mii = {};
+                mii.cbSize = sizeof(mii);
+                mii.fMask = MIIM_BITMAP;
+                mii.hbmpItem = CreateMappedBitmap(hInst, (INT_PTR)sfi.hIcon, 0, NULL, 0);
+                SetMenuItemInfo(menu, id, FALSE, &mii);
+                DestroyIcon(sfi.hIcon);
+            }
         }
     }
-    else if (msg == WM_DESTROY) {
-        PostQuitMessage(0);
-    }
-
-    return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
 void ShowContextMenu(HWND hwnd) {
     POINT pt;
     GetCursorPos(&pt);
 
-    HMENU hMenu = CreatePopupMenu();
-    currentMenuID = ID_TRAY_BASE;
-    menuCommandMap.clear();
+    if (hTrayMenu) DestroyMenu(hTrayMenu);
+    hTrayMenu = CreatePopupMenu();
 
-    PopulateMenuFromFolder(hMenu, rootShortcutDir, true);
+    commandMap.clear();
+    commandIdCounter = 1000;
+
+    AddShortcutsToMenu(hTrayMenu, shortcutsDir);
+    AppendMenu(hTrayMenu, MF_SEPARATOR, 0, NULL);
+    AppendMenu(hTrayMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
 
     SetForegroundWindow(hwnd);
-    TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
-    DestroyMenu(hMenu);
+    TrackPopupMenu(hTrayMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
 }
 
-void PopulateMenuFromFolder(HMENU hMenu, const std::wstring& folder, bool recurse) {
-    WIN32_FIND_DATA findData;
-    std::wstring searchPath = folder + L"\\*";
-    HANDLE hFind = FindFirstFile(searchPath.c_str(), &findData);
-
-    if (hFind == INVALID_HANDLE_VALUE) return;
-
-    do {
-        std::wstring name = findData.cFileName;
-        if (name == L"." || name == L"..") continue;
-
-        std::wstring fullPath = folder + L"\\" + name;
-
-        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY && recurse) {
-            HMENU subMenu = CreatePopupMenu();
-            PopulateMenuFromFolder(subMenu, fullPath, recurse);
-            InsertMenu(hMenu, -1, MF_BYPOSITION | MF_POPUP, (UINT_PTR)subMenu, name.c_str());
-        }
-        else if (PathMatchSpec(name.c_str(), L"*.lnk")) {
-            HICON hIcon = GetSmallIcon(fullPath);
-            MENUITEMINFO mii = { sizeof(MENUITEMINFO) };
-            mii.fMask = MIIM_ID | MIIM_STRING | MIIM_FTYPE | MIIM_BITMAP;
-            mii.fType = MFT_STRING;
-            mii.wID = currentMenuID;
-            mii.dwTypeData = (LPWSTR)name.c_str();
-
-            HBITMAP hBmp = NULL;
-            if (hIcon) {
-                ICONINFO iconInfo;
-                GetIconInfo(hIcon, &iconInfo);
-                hBmp = iconInfo.hbmColor;
-                mii.hbmpItem = hBmp;
+void RunShortcut(const std::wstring& path) {
+    CoInitialize(NULL);
+    IShellLink* pShellLink = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
+        IID_IShellLink, (void**)&pShellLink))) {
+        IPersistFile* pPersistFile = nullptr;
+        if (SUCCEEDED(pShellLink->QueryInterface(IID_IPersistFile, (void**)&pPersistFile))) {
+            if (SUCCEEDED(pPersistFile->Load(path.c_str(), STGM_READ))) {
+                pShellLink->Resolve(hwnd, SLR_NO_UI);
+                WCHAR target[MAX_PATH];
+                if (SUCCEEDED(pShellLink->GetPath(target, MAX_PATH, NULL, 0))) {
+                    ShellExecute(NULL, L"open", target, NULL, NULL, SW_SHOWNORMAL);
+                }
             }
-
-            InsertMenuItem(hMenu, -1, TRUE, &mii);
-            menuCommandMap[currentMenuID++] = fullPath;
+            pPersistFile->Release();
         }
-    } while (FindNextFile(hFind, &findData));
-    FindClose(hFind);
-}
-
-HICON GetSmallIcon(const std::wstring& filePath) {
-    SHFILEINFO sfi;
-    SHGetFileInfo(filePath.c_str(), 0, &sfi, sizeof(sfi),
-        SHGFI_ICON | SHGFI_SMALLICON);
-    return sfi.hIcon;
-}
-
-void ExecuteShortcut(const std::wstring& path) {
-    IShellLink* psl = NULL;
-    HRESULT hr = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
-        IID_IShellLink, (LPVOID*)&psl);
-    if (SUCCEEDED(hr)) {
-        IPersistFile* ppf = NULL;
-        hr = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-        if (SUCCEEDED(hr)) {
-            hr = ppf->Load(path.c_str(), STGM_READ);
-            if (SUCCEEDED(hr)) {
-                psl->Resolve(NULL, SLR_NO_UI);
-                WIN32_FIND_DATA wfd;
-                WCHAR szTarget[MAX_PATH];
-                psl->GetPath(szTarget, MAX_PATH, &wfd, SLGP_UNCPRIORITY);
-                ShellExecute(NULL, L"open", szTarget, NULL, NULL, SW_SHOWNORMAL);
-            }
-            ppf->Release();
-        }
-        psl->Release();
+        pShellLink->Release();
     }
+    CoUninitialize();
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+    hInst = hInstance;
+
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = L"TrayAppClass";
+    RegisterClass(&wc);
+
+    hwnd = CreateWindow(wc.lpszClassName, L"TrayApp", WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 300, 200,
+        NULL, NULL, hInstance, NULL);
+
+    nid = {};
+    nid.cbSize = sizeof(nid);
+    nid.hWnd = hwnd;
+    nid.uID = TRAY_ICON_UID;
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAYICON;
+    nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcscpy_s(nid.szTip, L"Shortcut Menu");
+    Shell_NotifyIcon(NIM_ADD, &nid);
+
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    return 0;
 }
