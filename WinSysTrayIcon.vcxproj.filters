@@ -24,29 +24,26 @@
     <ClInclude Include="Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="WinSysTryIcon.h">
+    <ClInclude Include="WinSysTrayIcon.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="WinSysTryIcon.cpp">
+    <ClCompile Include="WinSysTrayIcon.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="WinSysTryIcon.rc">
+    <ResourceCompile Include="WinSysTrayIcon.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="small.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="WinSysTryIcon.ico">
+    <Image Include="WinSysTrayIcon.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="WinSysTryIcon.ini" />
+    <CopyFileToFolders Include="WinSysTrayIcon.ini" />
   </ItemGroup>
 </Project>

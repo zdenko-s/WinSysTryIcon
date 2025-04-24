@@ -163,7 +163,6 @@
     <ResourceCompile Include="WinSysTrayIcon.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="small.ico" />
     <Image Include="WinSysTrayIcon.ico" />
   </ItemGroup>
   <ItemGroup>
