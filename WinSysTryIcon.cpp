@@ -7,6 +7,9 @@
 #include <vector>
 #include <map>
 
+#include <filesystem>
+namespace fs = std::filesystem;
+
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "comctl32.lib")
@@ -18,7 +21,8 @@
 std::map<int, std::wstring> menuCommandMap;
 int currentMenuID = ID_TRAY_BASE;
 
-std::wstring rootShortcutDir = L"C:\\Util\\Util"; // <-- SET THIS TO YOUR SHORTCUT DIRECTORY
+// Shortcut directory. Read from ini file
+std::wstring rootShortcutDir;
 
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -34,6 +38,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
+	// Read ini file
+	wchar_t iniFileName[MAX_PATH];
+	if (GetModuleFileName(nullptr, iniFileName, MAX_PATH))
+	{
+		fs::path iniFile = fs::path{ iniFileName };
+		iniFile.replace_extension("ini");
+		wchar_t readBuffer[MAX_PATH];
+		*readBuffer = 0;
+		GetPrivateProfileString(L"startup", L"Folder", L"", readBuffer, MAX_PATH, iniFile.c_str());
+		if (*readBuffer)
+			rootShortcutDir.assign(readBuffer);
+	}
 
 	auto hr = CoInitialize(NULL);
 
