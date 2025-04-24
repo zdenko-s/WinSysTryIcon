@@ -154,20 +154,20 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
-    <ClInclude Include="WinSysTryIcon.h" />
+    <ClInclude Include="WinSysTrayIcon.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="WinSysTryIcon.cpp" />
+    <ClCompile Include="WinSysTrayIcon.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="WinSysTryIcon.rc" />
+    <ResourceCompile Include="WinSysTrayIcon.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="small.ico" />
-    <Image Include="WinSysTryIcon.ico" />
+    <Image Include="WinSysTrayIcon.ico" />
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="WinSysTryIcon.ini">
+    <CopyFileToFolders Include="WinSysTrayIcon.ini">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</DeploymentContent>
       <FileType>Document</FileType>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
