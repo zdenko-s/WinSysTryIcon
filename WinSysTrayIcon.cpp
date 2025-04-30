@@ -27,6 +27,7 @@ std::wstring rootShortcutDir;
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void ShowContextMenu(HWND hwnd);
+void ShowAppMenu(HWND hwnd);
 void PopulateMenuFromFolder(HMENU hMenu, const std::wstring& folder, bool recurse);
 void ExecuteShortcut(const std::wstring& path);
 HICON GetSmallIcon(const std::wstring& filePath);
@@ -96,9 +97,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	if (msg == WM_TRAYICON) {
-		if (LOWORD(lParam) == WM_LBUTTONUP || LOWORD(lParam) == WM_RBUTTONUP) {
+		if (LOWORD(lParam) == WM_LBUTTONUP) {
+			ShowAppMenu(hwnd);
+		}
+		else if (LOWORD(lParam) == WM_RBUTTONUP) {
 			ShowContextMenu(hwnd);
 		}
+
 	}
 	else if (msg == WM_COMMAND) {
 		if (LOWORD(wParam) == ID_TRAY_EXIT) {
@@ -118,7 +123,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-void ShowContextMenu(HWND hwnd) {
+void ShowAppMenu(HWND hwnd) {
 	POINT pt;
 	GetCursorPos(&pt);
 
@@ -136,6 +141,22 @@ void ShowContextMenu(HWND hwnd) {
 	DestroyMenu(hMenu);
 }
 
+
+void ShowContextMenu(HWND hwnd) {
+	POINT pt;
+	GetCursorPos(&pt);
+
+	//HMENU hMenu = CreatePopupMenu();
+	HMENU hMenu = LoadMenu(NULL, MAKEINTRESOURCE(IDR_MENU_TRAY));
+
+
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
+
+	SetForegroundWindow(hwnd);
+	TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+	DestroyMenu(hMenu);
+}
 void PopulateMenuFromFolder(HMENU hMenu, const std::wstring& folder, bool recurse) {
 	WIN32_FIND_DATA findData;
 	std::wstring searchPath = folder + L"\\*";
