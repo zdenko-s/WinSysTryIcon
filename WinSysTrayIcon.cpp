@@ -1,3 +1,5 @@
+#include "resource.h"
+
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -15,11 +17,12 @@ namespace fs = std::filesystem;
 #pragma comment(lib, "comctl32.lib")
 
 #define WM_TRAYICON (WM_USER + 1)
-#define ID_TRAY_EXIT 9000
 #define ID_TRAY_BASE 2000
 
 std::map<int, std::wstring> menuCommandMap;
 int currentMenuID = ID_TRAY_BASE;
+
+HINSTANCE hInst;
 
 // Shortcut directory. Read from ini file
 std::wstring rootShortcutDir;
@@ -39,6 +42,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
+
+	hInst = hInstance;
+
 	// Read ini file
 	wchar_t iniFileName[MAX_PATH];
 	if (GetModuleFileName(nullptr, iniFileName, MAX_PATH))
@@ -106,7 +112,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 	}
 	else if (msg == WM_COMMAND) {
-		if (LOWORD(wParam) == ID_TRAY_EXIT) {
+		if (LOWORD(wParam) == ID_SETTINGS_EXIT) {
 			PostQuitMessage(0);
 		}
 		else {
@@ -133,8 +139,8 @@ void ShowAppMenu(HWND hwnd) {
 
 	PopulateMenuFromFolder(hMenu, rootShortcutDir, true);
 
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
+	//AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	//AppendMenu(hMenu, MF_STRING, ID_SETTINGS_EXIT, L"Exit");
 
 	SetForegroundWindow(hwnd);
 	TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
@@ -143,19 +149,29 @@ void ShowAppMenu(HWND hwnd) {
 
 
 void ShowContextMenu(HWND hwnd) {
+	/*
 	POINT pt;
 	GetCursorPos(&pt);
 
 	//HMENU hMenu = CreatePopupMenu();
-	HMENU hMenu = LoadMenu(NULL, MAKEINTRESOURCE(IDR_MENU_TRAY));
-
-
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
+	HMENU hMenu = LoadMenu(hInst, MAKEINTRESOURCE(IDR_MENU_TRAY));
+	HMENU hSubMenu = GetSubMenu(hMenu, 0);
+	
+	AppendMenu(hSubMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hSubMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
 
 	SetForegroundWindow(hwnd);
 	TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
 	DestroyMenu(hMenu);
+	*/
+	POINT pt;
+	GetCursorPos(&pt);
+	SetForegroundWindow(hwnd); // Needed for TrackPopupMenu
+	HMENU hMenu = LoadMenu(hInst, MAKEINTRESOURCE(IDR_MENU_TRAY));
+	HMENU hSubMenu = GetSubMenu(hMenu, 0);
+	TrackPopupMenu(hSubMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+	DestroyMenu(hMenu);
+
 }
 void PopulateMenuFromFolder(HMENU hMenu, const std::wstring& folder, bool recurse) {
 	WIN32_FIND_DATA findData;
