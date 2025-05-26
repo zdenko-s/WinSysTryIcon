@@ -16,3 +16,5 @@ Folder=c:\Util
 When running, application seats in system tray. Left mouse click on application icon will show popup menu.  
 ![SysTray menu](SysTrayMenu.png)
 Right mouse button click will open settings menu
+
+* [Online Icon editor](https://redketchup.io/icon-editor)
